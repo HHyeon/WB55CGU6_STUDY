@@ -7,9 +7,16 @@
 #include "usbd_cdc_if.h"
 #include "list_object.h"
 
+
+#if PRINTF_REMAPPING_USE_USB_VCOM
 extern USBD_HandleTypeDef hUsbDeviceFS;
 #define logging_cdc_instance hUsbDeviceFS
+#endif
 
+#if PRINTF_REMAPPING_USE_USART
+extern UART_HandleTypeDef huart1;
+#define logging_uart_instance huart1
+#endif
 
 uint8_t cli_line_data[cli_buffer_maxlen];
 uint8_t cli_line_datalen = 0;
@@ -124,8 +131,38 @@ void cli_single_char_process(uint8_t rxchar, uint8_t *buffer, uint16_t buffersiz
   }
 }
 
+
 uint8_t cdc_input_buffer[cli_buffer_maxlen];
 uint8_t cdc_input_buffer_index = 0;
+
+
+#if PRINTF_REMAPPING_USE_USART
+
+uint8_t cli_uart_rx_char = 0;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if(logging_uart_instance.Instance == huart->Instance)
+  {
+    cli_single_char_process(cli_uart_rx_char, cdc_input_buffer, sizeof(cdc_input_buffer), &cdc_input_buffer_index);
+
+    HAL_UART_Receive_IT(&huart1, &cli_uart_rx_char, 1);
+  }
+}
+
+volatile uint8_t uart_tx_done = 1;
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if(logging_uart_instance.Instance == huart->Instance)
+  {
+    uart_tx_done = 1;
+  }
+}
+
+#endif
+
+#if PRINTF_REMAPPING_USE_USB_VCOM
 
 void user_cdc_rx_buffer_process(uint8_t *data, uint32_t len)
 {
@@ -139,6 +176,7 @@ void user_cdc_rx_buffer_process(uint8_t *data, uint32_t len)
 
   }
 }
+#endif
 
 
 
@@ -147,6 +185,10 @@ void user_cdc_rx_buffer_process(uint8_t *data, uint32_t len)
 void printf_remapping_init()
 {
   wts_Queue_Reset(&cli_buffer_queue_object);
+
+#if PRINTF_REMAPPING_USE_USART
+  HAL_UART_Receive_IT(&huart1, &cli_uart_rx_char, 1);
+#endif
 }
 
 uint8_t vcom_comm_enable = 0;
@@ -154,14 +196,20 @@ uint8_t vcom_devstate_past = 0;
 uint32_t vcom_comm_state_configured_set_delay_timer_enable = 0;
 uint32_t vcom_comm_state_configured_set_delay_tickstore = 0;
 
+#if PRINTF_REMAPPING_USE_USART
+char uart_tx_buffer[50] = {0,};
+#endif
+
 char printf_lineout_buffer[50] = {0,};
 char printf_lineout_buffer_cat[2];
 
 uint32_t printf_remapping_process_interval_tickstore=0;
 void printf_remapping_process()
 {
-  static uint32_t vcom_devstate_interval_check_tickstore = 0;
 
+#if PRINTF_REMAPPING_USE_USB_VCOM
+
+  static uint32_t vcom_devstate_interval_check_tickstore = 0;
   if(vcom_devstate_interval_check_tickstore + 100 <= HAL_GetTick())
   {
     vcom_devstate_interval_check_tickstore = HAL_GetTick();
@@ -188,8 +236,8 @@ void printf_remapping_process()
         vcom_comm_enable = 1;
       }
     }
-
   }
+#endif
 
 
 
@@ -197,7 +245,13 @@ void printf_remapping_process()
   {
     printf_remapping_process_interval_tickstore = HAL_GetTick();
 
+#if PRINTF_REMAPPING_USE_USB_VCOM
     if(vcom_comm_enable)
+#endif
+
+#if PRINTF_REMAPPING_USE_USART
+    if(uart_tx_done == 1)
+#endif
     while(wts_Queue_count(&cli_buffer_queue_object) > 0)
     {
 
@@ -223,14 +277,26 @@ void printf_remapping_process()
 
         if(printout)
         {
+#if PRINTF_REMAPPING_USE_USB_VCOM
           CDC_Transmit_FS((uint8_t*)printf_lineout_buffer, strlen(printf_lineout_buffer));
+#endif
+
+#if PRINTF_REMAPPING_USE_USART
+          uart_tx_done = 0;
+//          HAL_UART_Transmit(&logging_uart_instance, (uint8_t*)printf_lineout_buffer, strlen(printf_lineout_buffer), HAL_MAX_DELAY);
+
+          memcpy(uart_tx_buffer, printf_lineout_buffer, sizeof(printf_lineout_buffer));
+          HAL_UART_Transmit_IT(&huart1, (uint8_t*)uart_tx_buffer, strlen(uart_tx_buffer));
+#endif
           memset(printf_lineout_buffer, 0, sizeof(printf_lineout_buffer));
+
+          break;
         }
-
       }
-
-      cli_buffer_queue_object_counts = wts_Queue_count(&cli_buffer_queue_object);
     }
+
+    cli_buffer_queue_object_counts = wts_Queue_count(&cli_buffer_queue_object);
+
   }
 }
 

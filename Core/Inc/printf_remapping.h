@@ -9,6 +9,9 @@ extern uint8_t cli_enter_avilable;
 extern uint8_t cli_line_available;
 
 
+#define PRINTF_REMAPPING_USE_USB_VCOM 0
+#define PRINTF_REMAPPING_USE_USART 1
+
 extern int __custom_printf__(const char *format, ...);
 
 void printf_remapping_init();

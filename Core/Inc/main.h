@@ -28,6 +28,9 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32wbxx_hal.h"
+#include "app_conf.h"
+#include "app_entry.h"
+#include "app_common.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -61,6 +64,7 @@ void Error_Handler(void);
 #define LD1_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
+#include "printf_remapping.h"
 #define printf __custom_printf__
 /* USER CODE END Private defines */
 
